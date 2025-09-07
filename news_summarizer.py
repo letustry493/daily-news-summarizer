@@ -37,7 +37,7 @@ class NewsSymmarizer:
         self.tokens_used_today = 0
         self.estimated_cost_today = 0.0
     
-    def fetch_recent_articles(self, hours_back: int = 24) -> List[Dict]:
+    def fetch_recent_articles(self, hours_back: int = 72) -> List[Dict]:
         """Fetch articles from the last N hours from Feedbin"""
         
         # Calculate timestamp for N hours ago
