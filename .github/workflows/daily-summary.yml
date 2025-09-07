@@ -1,0 +1,35 @@
+name: Daily News Summary
+
+on:
+  schedule:
+    # Runs at 8:00 AM UTC every day (adjust timezone as needed)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allows manual running for testing
+
+jobs:
+  send-summary:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+    
+    - name: Run news summarizer
+      env:
+        FEEDBIN_EMAIL: ${{ secrets.FEEDBIN_EMAIL }}
+        FEEDBIN_PASSWORD: ${{ secrets.FEEDBIN_PASSWORD }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+      run: python news_summarizer.py
