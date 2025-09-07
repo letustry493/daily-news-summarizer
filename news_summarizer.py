@@ -16,21 +16,17 @@ import time
 
 class NewsSymmarizer:
     def __init__(self):
-        # API credentials - set these as environment variables
-        self.feedbin_email = os.getenv('FEEDBIN_EMAIL')
-        self.feedbin_password = os.getenv('FEEDBIN_PASSWORD')
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        
-        # Email settings
-        self.smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-        self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        self.email_user = os.getenv('EMAIL_USER')
-        self.email_password = os.getenv('EMAIL_PASSWORD')
-        self.recipient_email = os.getenv('RECIPIENT_EMAIL')
-        
-        # API endpoints
-        self.feedbin_base_url = 'https://api.feedbin.com/v2'
-        self.openai_base_url = 'https://api.openai.com/v1'
+    # API credentials - now reading from environment variables
+    self.feedbin_email = os.getenv('FEEDBIN_EMAIL')
+    self.feedbin_password = os.getenv('FEEDBIN_PASSWORD') 
+    self.openai_api_key = os.getenv('OPENAI_API_KEY')
+    
+    # Email settings
+    self.smtp_server = "smtp.gmail.com"  # Change if not using Gmail
+    self.smtp_port = 587
+    self.email_user = os.getenv('EMAIL_USER')
+    self.email_password = os.getenv('EMAIL_PASSWORD')
+    self.recipient_email = os.getenv('RECIPIENT_EMAIL')
         
     def fetch_recent_articles(self, hours_back: int = 24) -> List[Dict]:
         """Fetch articles from the last N hours from Feedbin"""
@@ -233,8 +229,6 @@ Generated on {datetime.now().strftime('%Y-%m-%d at %I:%M %p')}
 
 def main():
     """Main function"""
-    summarizer = NewsSymmarizer()
-    
     # Check if all required environment variables are set
     required_vars = [
         'FEEDBIN_EMAIL', 'FEEDBIN_PASSWORD', 'OPENAI_API_KEY',
@@ -247,6 +241,8 @@ def main():
         for var in missing_vars:
             print(f"  - {var}")
         return
+    
+    summarizer = NewsSymmarizer()
     
     # Run the daily summary
     summarizer.run_daily_summary()
