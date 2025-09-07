@@ -37,16 +37,62 @@ class NewsSymmarizer:
         self.tokens_used_today = 0
         self.estimated_cost_today = 0.0
     
-    def fetch_recent_articles(self, hours_back: int = 72) -> List[Dict]:
+    def fetch_recent_articles(self, hours_back: int = 24) -> List[Dict]:
         """Fetch articles from the last N hours from Feedbin"""
+        
+        print(f"🔍 DEBUG: Fetching articles from last {hours_back} hours")
+        print(f"🔍 DEBUG: Using Feedbin email: {self.feedbin_email}")
         
         # Calculate timestamp for N hours ago
         since_time = datetime.now() - timedelta(hours=hours_back)
         since_param = since_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+        print(f"🔍 DEBUG: Looking for articles since: {since_param}")
         
-        # Get entries from Feedbin
+        # First, let's check if we can connect to Feedbin at all
+        print("🔍 DEBUG: Testing Feedbin authentication...")
+        auth_test_url = f"{self.feedbin_base_url}/subscriptions.json"
+        auth_response = requests.get(auth_test_url, auth=(self.feedbin_email, self.feedbin_password))
+        
+        if auth_response.status_code != 200:
+            print(f"❌ ERROR: Feedbin authentication failed: {auth_response.status_code}")
+            print(f"Response: {auth_response.text}")
+            return []
+        else:
+            subscriptions = auth_response.json()
+            print(f"✅ SUCCESS: Connected to Feedbin. You have {len(subscriptions)} subscriptions")
+            if subscriptions:
+                print("📰 Your feeds:")
+                for sub in subscriptions[:5]:  # Show first 5 feeds
+                    print(f"  - {sub.get('title', 'Unknown')} ({sub.get('site_url', 'No URL')})")
+                if len(subscriptions) > 5:
+                    print(f"  ... and {len(subscriptions) - 5} more feeds")
+        
+        # Get entries from Feedbin - try without date filter first
+        print("🔍 DEBUG: Fetching recent entries...")
         entries_url = f"{self.feedbin_base_url}/entries.json"
-        params = {'since': since_param, 'per_page': 50}  # Adjust per_page as needed
+        
+        # Try getting entries without date filter first to see if there are any
+        print("🔍 DEBUG: First, checking if there are ANY recent entries...")
+        no_filter_response = requests.get(
+            entries_url,
+            auth=(self.feedbin_email, self.feedbin_password),
+            params={'per_page': 10}  # Just get 10 most recent
+        )
+        
+        if no_filter_response.status_code == 200:
+            recent_entries = no_filter_response.json()
+            print(f"✅ Found {len(recent_entries)} recent entries (without date filter)")
+            if recent_entries:
+                latest_entry = recent_entries[0]
+                print(f"📅 Latest entry published: {latest_entry.get('published', 'No date')}")
+                print(f"📰 Latest entry title: {latest_entry.get('title', 'No title')}")
+        else:
+            print(f"❌ ERROR: Could not fetch entries: {no_filter_response.status_code}")
+            return []
+        
+        # Now try with date filter
+        params = {'since': since_param, 'per_page': 50}
+        print(f"🔍 DEBUG: Now trying with date filter: since={since_param}")
         
         response = requests.get(
             entries_url,
@@ -55,10 +101,24 @@ class NewsSymmarizer:
         )
         
         if response.status_code != 200:
-            print(f"Error fetching articles: {response.status_code}")
+            print(f"❌ ERROR: Failed to fetch filtered articles: {response.status_code}")
+            print(f"Response: {response.text}")
             return []
         
         articles = response.json()
+        print(f"✅ Found {len(articles)} articles with date filter")
+        
+        if not articles:
+            print("⚠️  No articles found with current date filter. Trying without date filter...")
+            # If no articles with date filter, get some recent ones anyway for testing
+            fallback_response = requests.get(
+                entries_url,
+                auth=(self.feedbin_email, self.feedbin_password),
+                params={'per_page': 20}
+            )
+            if fallback_response.status_code == 200:
+                articles = fallback_response.json()
+                print(f"📰 Using {len(articles)} recent articles for testing (ignoring date filter)")
         
         # Filter and format articles
         formatted_articles = []
@@ -72,6 +132,7 @@ class NewsSymmarizer:
                 'feed_name': self.get_feed_name(article.get('feed_id'))
             })
         
+        print(f"🔍 DEBUG: Returning {len(formatted_articles)} formatted articles")
         return formatted_articles
     
     def get_feed_name(self, feed_id: int) -> str:
@@ -368,8 +429,8 @@ def main():
     
     summarizer = NewsSymmarizer()
     
-    # Run the daily summary
-    summarizer.run_daily_summary()
+    # Run the daily summary - change hours_back for testing
+    summarizer.run_daily_summary(hours_back=168)  # 168 hours = 7 days
 
 if __name__ == "__main__":
     main()
