@@ -10,24 +10,33 @@ import smtplib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
 import time
 
 class NewsSymmarizer:
     def __init__(self):
-    # API credentials - now reading from environment variables
-    self.feedbin_email = os.getenv('FEEDBIN_EMAIL')
-    self.feedbin_password = os.getenv('FEEDBIN_PASSWORD') 
-    self.openai_api_key = os.getenv('OPENAI_API_KEY')
-    
-    # Email settings
-    self.smtp_server = "smtp.gmail.com"  # Change if not using Gmail
-    self.smtp_port = 587
-    self.email_user = os.getenv('EMAIL_USER')
-    self.email_password = os.getenv('EMAIL_PASSWORD')
-    self.recipient_email = os.getenv('RECIPIENT_EMAIL')
+        # API credentials - reading from environment variables for GitHub Actions
+        # For local testing, you can set these directly or use environment variables
+        self.feedbin_email = os.getenv('FEEDBIN_EMAIL', 'YOUR_FEEDBIN_EMAIL_HERE')
+        self.feedbin_password = os.getenv('FEEDBIN_PASSWORD', 'YOUR_FEEDBIN_PASSWORD_HERE')
+        self.openai_api_key = os.getenv('OPENAI_API_KEY', 'YOUR_OPENAI_API_KEY_HERE')
         
+        # Email settings
+        self.smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+        self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        self.email_user = os.getenv('EMAIL_USER', 'YOUR_EMAIL_HERE')
+        self.email_password = os.getenv('EMAIL_PASSWORD', 'YOUR_EMAIL_APP_PASSWORD_HERE')
+        self.recipient_email = os.getenv('RECIPIENT_EMAIL', 'WHERE_TO_SEND_SUMMARY@example.com')
+        
+        # API endpoints
+        self.feedbin_base_url = 'https://api.feedbin.com/v2'
+        self.openai_base_url = 'https://api.openai.com/v1'
+        
+        # Token usage tracking
+        self.tokens_used_today = 0
+        self.estimated_cost_today = 0.0
+    
     def fetch_recent_articles(self, hours_back: int = 24) -> List[Dict]:
         """Fetch articles from the last N hours from Feedbin"""
         
@@ -98,6 +107,103 @@ class NewsSymmarizer:
         
         return text
     
+    def get_api_usage_info(self) -> Dict:
+        """Get current API usage and billing information from OpenAI"""
+        
+        headers = {
+            'Authorization': f'Bearer {self.openai_api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Get usage information (this endpoint shows usage data)
+        usage_info = {
+            'current_usage': None,
+            'billing_info': None,
+            'error': None
+        }
+        
+        try:
+            # Get usage data for current billing period
+            # Note: OpenAI's usage endpoint format may change
+            today = datetime.now().strftime('%Y-%m-%d')
+            start_of_month = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+            
+            usage_url = f"{self.openai_base_url}/usage"
+            params = {
+                'start_date': start_of_month,
+                'end_date': today
+            }
+            
+            response = requests.get(usage_url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                usage_data = response.json()
+                usage_info['current_usage'] = usage_data
+            else:
+                usage_info['error'] = f"Usage API error: {response.status_code}"
+                
+        except Exception as e:
+            usage_info['error'] = f"Error fetching usage: {str(e)}"
+        
+        return usage_info
+    
+    def estimate_token_cost(self, model: str, input_tokens: int, output_tokens: int) -> float:
+        """Estimate cost based on token usage"""
+        
+        # Current OpenAI pricing (as of late 2024/early 2025)
+        pricing = {
+            'gpt-4': {'input': 0.03, 'output': 0.06},  # per 1K tokens
+            'gpt-3.5-turbo': {'input': 0.0015, 'output': 0.002},  # per 1K tokens
+            'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
+        }
+        
+        if model not in pricing:
+            # Default to GPT-4 pricing if unknown model
+            model = 'gpt-4'
+            
+        input_cost = (input_tokens / 1000) * pricing[model]['input']
+        output_cost = (output_tokens / 1000) * pricing[model]['output']
+        
+        return input_cost + output_cost
+    
+    def display_usage_summary(self):
+        """Display current API usage and cost information"""
+        
+        print("\n" + "="*50)
+        print("📊 CHATGPT API USAGE SUMMARY")
+        print("="*50)
+        
+        # Show today's session usage
+        if self.tokens_used_today > 0:
+            print(f"Today's session:")
+            print(f"  Tokens used: {self.tokens_used_today:,}")
+            print(f"  Estimated cost: ${self.estimated_cost_today:.4f}")
+        
+        # Try to get overall account usage
+        usage_info = self.get_api_usage_info()
+        
+        if usage_info['error']:
+            print(f"\n⚠️  Could not fetch account usage: {usage_info['error']}")
+            print("This is normal - OpenAI's usage API has limited access.")
+        else:
+            current_usage = usage_info.get('current_usage')
+            if current_usage:
+                total_usage = current_usage.get('total_usage', 0) / 100  # Convert from cents
+                print(f"\n📈 Account Usage This Month:")
+                print(f"  Total spent: ${total_usage:.2f}")
+        
+        # Display helpful context
+        print(f"\n💡 Cost Context:")
+        print(f"  GPT-3.5-turbo: ~$0.002 per 1K tokens")
+        print(f"  GPT-4: ~$0.045 per 1K tokens")
+        print(f"  Average daily run: 2K-5K tokens")
+        
+        # Show recommendations
+        if self.estimated_cost_today > 0.10:  # More than 10 cents
+            print(f"\n💰 Cost Tip: Consider switching to GPT-3.5-turbo to reduce costs")
+        
+        print("="*50 + "\n")
+    
     def summarize_with_chatgpt(self, articles: List[Dict]) -> str:
         """Send articles to ChatGPT for summarization"""
         
@@ -164,6 +270,22 @@ Please focus on the most important and interesting stories, and make the summary
             return f"Error generating summary. Found {len(articles)} articles."
         
         result = response.json()
+        
+        # Track token usage and cost
+        usage = result.get('usage', {})
+        input_tokens = usage.get('prompt_tokens', 0)
+        output_tokens = usage.get('completion_tokens', 0)
+        total_tokens = usage.get('total_tokens', 0)
+        
+        # Update session tracking
+        self.tokens_used_today += total_tokens
+        session_cost = self.estimate_token_cost(data['model'], input_tokens, output_tokens)
+        self.estimated_cost_today += session_cost
+        
+        # Display token usage info
+        print(f"🔤 Tokens used: {total_tokens:,} (input: {input_tokens:,}, output: {output_tokens:,})")
+        print(f"💰 Estimated cost: ${session_cost:.4f}")
+        
         return result['choices'][0]['message']['content']
     
     def send_email(self, summary: str, article_count: int):
@@ -240,6 +362,8 @@ def main():
         print("Missing required environment variables:")
         for var in missing_vars:
             print(f"  - {var}")
+        print("\nFor local testing, you can set these directly in the code.")
+        print("For GitHub Actions, add them as repository secrets.")
         return
     
     summarizer = NewsSymmarizer()
