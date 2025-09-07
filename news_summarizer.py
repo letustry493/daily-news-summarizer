@@ -394,7 +394,7 @@ Generated on {datetime.now().strftime('%Y-%m-%d at %I:%M %p')}
         
         if not articles:
             print("No articles found. Sending notification email.")
-            self.send_email("No new articles found in your feeds today.", 0)
+            self.send_email("No new articles found in your feeds today.", 0, [])
             return
         
         # Generate summary
